@@ -1,6 +1,6 @@
 // Dashboard page (needs common.js)
 // Not signed in? Back to the sign in page.
-if (!isSignedIn()) location.replace('signin.html');
+if (!isSignedIn()) location.replace('index.html');
 const me = users.find(u => u.email === session);
 const isAdmin = !!me && me.role === 'admin';
 $('who').textContent = me ? me.name + ' (' + me.role + ')' : '';
@@ -15,7 +15,7 @@ else {   // borrowers get a view-only catalog of cards titled "Items for borrowi
   document.querySelector('[data-tab="history"]').textContent = 'My history';   // borrowers only see their own
   $('thBorrower').classList.add('hidden');
 }
-$('signout').onclick = () => { session = null; store.set('ci_session', null); location.href = 'signin.html'; };
+$('signout').onclick = () => { session = null; store.set('ci_session', null); location.href = 'index.html'; };
 
 let items = store.get('ci_items', []);
 const saveItems = () => store.set('ci_items', items);
