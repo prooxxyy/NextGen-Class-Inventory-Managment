@@ -33,10 +33,14 @@
     <button class="btn ghost" id="addCat">Add category</button>
     <button class="btn" id="add">Add item</button>
   </div>
+  <div class="bulkbar hidden" id="bulkBar">
+    <span id="bulkCount"></span>
+    <div><button class="btn sm" id="bulkEdit">Edit selected</button> <button class="btn ghost sm" id="bulkClear">Clear</button></div>
+  </div>
   <div class="cards hidden" id="cards"></div>
   <div class="tablewrap" id="tableWrap">
     <table>
-      <thead><tr><th>Item</th><th>Category</th><th>Qty</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th><input type="checkbox" id="selAll" aria-label="Select all"></th><th>Item</th><th>Category</th><th>Qty</th><th>Status</th><th>Condition</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <div class="empty hidden" id="empty"></div>
@@ -54,6 +58,7 @@
   </div>
   <!-- History of borrowed items (admin sees everyone's, a borrower sees their own) -->
   <div id="historyView" class="hidden">
+    <div class="bar"><button class="btn danger sm hidden" id="clearHistory">Clear history</button></div>
     <div class="tablewrap">
       <table>
         <thead><tr><th>Item</th><th id="thBorrower">Borrower</th><th>What</th><th>Requested</th><th>Approved</th><th>Returned</th><th>Status</th></tr></thead>
@@ -83,6 +88,8 @@
       <div><label for="f-status">Status</label>
         <select id="f-status"><option>Available</option><option>In use</option><option>Needs repair</option><option>Partly borrowed</option><option>Borrowed</option></select></div>
     </div>
+    <label for="f-cond">Condition</label>
+    <select id="f-cond"><option value="">Not set</option><option>New</option><option>Slightly used</option><option>Used</option><option>Broken</option></select>
     <label for="f-notes">Notes (optional)</label>
     <textarea id="f-notes" rows="2" placeholder="Serial number, shelf, who has it…"></textarea>
     <label for="f-parts">Parts inside this item (optional)</label>
@@ -91,6 +98,25 @@
     <div class="actions">
       <button type="button" class="btn ghost" id="cancel">Cancel</button>
       <button type="submit" class="btn">Save item</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Admin: edit several items at once -->
+<dialog id="bulkDlg">
+  <form id="bulkForm">
+    <h2 id="bulkTitle">Edit items</h2>
+    <p class="note">Only the fields you change are applied to every selected item. Leave "No change" to keep each item's current value.</p>
+    <label for="bk-cat">Category</label>
+    <select id="bk-cat"></select>
+    <label for="bk-status">Status</label>
+    <select id="bk-status"><option value="">No change</option><option>Available</option><option>In use</option><option>Needs repair</option></select>
+    <label for="bk-cond">Condition</label>
+    <select id="bk-cond"><option value="">No change</option><option>New</option><option>Slightly used</option><option>Used</option><option>Broken</option></select>
+    <p class="err" id="bk-err" role="alert"></p>
+    <div class="actions">
+      <button type="button" class="btn ghost" id="bkCancel">Cancel</button>
+      <button type="submit" class="btn">Apply to selected</button>
     </div>
   </form>
 </dialog>

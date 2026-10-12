@@ -4,7 +4,7 @@ if (!isSignedIn()) location.replace('signin.html');
 const me = users.find(u => u.email === session);
 const isAdmin = !!me && me.role === 'admin';
 $('who').textContent = me ? me.name + ' (' + me.role + ')' : '';
-if (isAdmin) { $('usersTab').classList.remove('hidden'); document.querySelector('.tabs').classList.add('wide'); }
+if (isAdmin) { $('usersTab').classList.remove('hidden'); document.querySelector('.tabs').classList.add('wide'); $('clearHistory').classList.remove('hidden'); }
 else {   // borrowers get a view-only catalog of cards titled "Items for borrowing"
   $('add').classList.add('hidden'); $('addCat').classList.add('hidden');
   document.title = 'Items for borrowing';
@@ -59,6 +59,8 @@ function syncStatus(i){   // Available / Partly borrowed / Borrowed follows the 
 items.forEach(i => {   // upgrade older single-loan items
   if (i.loan) { i.loans = [{ ...i.loan, id: 'm' + i.id, qty: units(i) }]; delete i.loan; }
   if (!i.loans) i.loans = [];
+  const OLD_COND = { Excellent: 'New', Good: 'Slightly used', Fair: 'Used', Poor: 'Broken' };   // older condition names
+  if (OLD_COND[i.cond]) i.cond = OLD_COND[i.cond];
 });
 saveItems();
 
@@ -68,6 +70,12 @@ function logLoan(item, l, outcome){
   borrowLog.push({ item: item.name, cat: item.cat, space: item.space || 'classroom', loan: { ...l }, outcome, endedAt: now() });
   store.set('ci_history', borrowLog);
 }
+$('clearHistory').onclick = () => {   // admin only: wipes finished history, keeps loans still in progress
+  if (!isAdmin) return;
+  if (!borrowLog.length) { alert('There is no finished history to clear.'); return; }
+  if (!confirm('Clear all finished history (returned, declined and cancelled)? Items that are currently borrowed or waiting for approval are kept. This cannot be undone.')) return;
+  borrowLog = []; store.set('ci_history', borrowLog); renderHistory();
+};
 
 function loanButtons(i, l){
   const b = (act, label, cls) => `<button class="btn ${cls} sm" data-act="${act}" data-id="${i.id}" data-lid="${l.id}">${label}</button>`;
@@ -161,13 +169,51 @@ $('borrowForm').onsubmit = e => {
   saveItems(); $('borrowDlg').close(); render();
 };
 
+// ----- selecting several items to edit at once (admin); condition shows in the table -----
+let selected = new Set(), lastIds = [];
+const condTag = i => i.cond ? `<span class="tag Cond-${i.cond.replace(' ', '-')}">${esc(i.cond)}</span>` : '<span class="note">Not set</span>';
+
+function updateBulk(){
+  selected.forEach(id => { if (!items.some(i => i.id === id)) selected.delete(id); });
+  $('bulkBar').classList.toggle('hidden', !selected.size);
+  $('bulkCount').textContent = selected.size + (selected.size === 1 ? ' item selected' : ' items selected');
+  $('selAll').checked = lastIds.length > 0 && lastIds.every(id => selected.has(id));
+}
+$('rows').onchange = e => {
+  const id = e.target.dataset.sel;
+  if (!id) return;
+  if (e.target.checked) selected.add(id); else selected.delete(id);
+  updateBulk();
+};
+$('selAll').onchange = e => { lastIds.forEach(id => e.target.checked ? selected.add(id) : selected.delete(id)); render(); };
+$('bulkClear').onclick = () => { selected.clear(); render(); };
+$('bulkEdit').onclick = () => {
+  $('bulkTitle').textContent = 'Edit ' + selected.size + (selected.size === 1 ? ' item' : ' items');
+  $('bk-cat').innerHTML = '<option value="">No change</option>' + catsFor().map(c => `<option>${esc(c)}</option>`).join('');
+  $('bk-status').value = ''; $('bk-cond').value = ''; $('bk-err').textContent = '';
+  $('bulkDlg').showModal();
+};
+$('bkCancel').onclick = () => $('bulkDlg').close();
+$('bulkForm').onsubmit = e => {
+  e.preventDefault();
+  const cat = $('bk-cat').value, status = $('bk-status').value, cond = $('bk-cond').value;
+  if (!cat && !status && !cond) { $('bk-err').textContent = 'Choose at least one thing to change.'; return; }
+  items.filter(i => selected.has(i.id)).forEach(i => {
+    if (cat) i.cat = cat;
+    if (status) i.status = status;
+    if (cond) i.cond = cond;
+  });
+  saveItems(); selected.clear(); $('bulkDlg').close(); render();
+};
+
 // borrower view: one card per item
 function renderCards(list){
   $('cards').innerHTML = list.length ? list.map(i => `<article class="card">
     <span class="cat">${esc(i.cat)}</span>
     <h3>${esc(i.name)}</h3>
     ${i.notes ? `<p class="note">${esc(i.notes)}</p>` : ''}
-    <div class="qty">Quantity: ${i.qtyOn === false ? 'N/A' : i.qty}</div>
+    <div class="qty">Quantity: ${i.qtyOn === false ? '' : i.qty}</div>
+    <div class="qty">Condition: ${condTag(i)}</div>
     <div>${statusCell(i)}</div>
     <div class="card-act">${actionButtons(i)}</div>
   </article>`).join('') : '<div class="empty">No items to show right now.</div>';
@@ -182,17 +228,21 @@ function render(){
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   $('stats').innerHTML = cats.map(c => {
     const n = items.filter(i => inTab(i) && i.cat === c).reduce((a,i) => a + (i.qtyOn === false ? 1 : i.qty), 0);
-    return `<div class="stat" data-cat="${esc(c)}" ${isAdmin ? ' title="Right-click to rename or delete"' : ''}><b>${n}</b><small>${esc(c)}</small></div>`;
+    return `<div class="stat${$('filter').value === c ? ' active' : ''}" data-cat="${esc(c)}" ${isAdmin ? ' title="Click to show only this category. Right-click to rename or delete."' : ''}><b>${n}</b><small>${esc(c)}</small></div>`;
   }).join('');
   const q = $('q').value.toLowerCase(), f = $('filter').value;
   const list = items.filter(i => inTab(i) && (!f || i.cat === f) && (i.name + ' ' + i.notes).toLowerCase().includes(q));
   if (!isAdmin) { renderCards(list); return; }
   $('rows').innerHTML = list.map(i => `<tr>
+    <td><input type="checkbox" data-sel="${i.id}"${selected.has(i.id) ? ' checked' : ''} aria-label="Select ${esc(i.name)}"></td>
     <td><b>${esc(i.name)}</b>${i.notes ? `<div class="note">${esc(i.notes)}</div>` : ''}</td>
-    <td>${esc(i.cat)}</td><td>${i.qtyOn === false ? 'N/A' : i.qty}</td>
+    <td>${esc(i.cat)}</td><td>${i.qtyOn === false ? '' : i.qty}</td>
     <td>${statusCell(i)}</td>
+    <td>${condTag(i)}</td>
     <td class="act">${actionButtons(i)}</td>
   </tr>`).join('');
+  lastIds = list.map(i => i.id);
+  updateBulk();
   if (isAdmin) {   // tell the admin when requests are waiting
     const n = items.reduce((a, i) => a + (i.loans || []).filter(l => l.state === 'requested' || l.state === 'return-pending').length, 0);
     $('alertBar').textContent = n + (n === 1 ? ' request is' : ' requests are') + ' waiting for your action.';
@@ -202,6 +252,14 @@ function render(){
   $('empty').textContent = items.filter(inTab).length ? 'No items match your search.' : 'No items yet. Select “Add item” to log your first laptop, robot, or kit.';
 }
 $('q').oninput = $('filter').onchange = render;
+$('stats').onclick = e => {   // click a category card to show only that category's items; click again for all
+  const card = e.target.closest('.stat');
+  if (!card) return;
+  const c = card.dataset.cat;
+  $('filter').value = $('filter').value === c ? '' : c;
+  render();
+  if ($('filter').value) $('tableWrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+};
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { tab = b.dataset.tab; showView(); });
 
 let editId = null;
@@ -223,6 +281,7 @@ function openForm(item){
   $('f-qtyon').checked = item ? item.qtyOn !== false : true;
   toggleQty();
   $('f-status').value = item ? item.status : 'Available';
+  $('f-cond').value = item ? (item.cond || '') : 'New';
   $('f-notes').value = item ? item.notes : '';
   $('f-parts').value = item && item.parts ? item.parts.map(p => p.name + ': ' + p.qty).join('\n') : '';
   $('dlg').showModal(); $('f-name').focus();
@@ -240,7 +299,7 @@ $('addCat').onclick = () => {
 $('cancel').onclick = () => $('dlg').close();
 $('itemForm').onsubmit = e => {
   e.preventDefault();
-  const data = { name: $('f-name').value.trim(), cat: $('f-cat').value, qtyOn: $('f-qtyon').checked, qty: $('f-qtyon').checked ? Math.max(0, parseInt($('f-qty').value) || 0) : 0, status: $('f-status').value, notes: $('f-notes').value.trim(), parts: parseParts() };
+  const data = { name: $('f-name').value.trim(), cat: $('f-cat').value, qtyOn: $('f-qtyon').checked, qty: $('f-qtyon').checked ? Math.max(0, parseInt($('f-qty').value) || 0) : 0, status: $('f-status').value, cond: $('f-cond').value, notes: $('f-notes').value.trim(), parts: parseParts() };
   if (editId) Object.assign(items.find(i => i.id === editId), data);
   else items.push({ id: Date.now().toString(36), space: tab, ...data });
   saveItems(); $('dlg').close(); render();
@@ -292,6 +351,7 @@ $('menuDelete').onclick = () => {
 
 // switch between the inventory tabs, History, and the admin Users tab
 function showView(){
+  selected.clear();
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   const other = tab === 'users' || tab === 'history';
   $('inv').classList.toggle('hidden', other);
